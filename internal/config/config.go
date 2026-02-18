@@ -30,7 +30,10 @@ func Get() (Config, error) {
 }
 
 func parseConfig() (cfg Config, err error) {
-	godotenv.Load()
+	err = godotenv.Load()
+	if err != nil {
+		return Config{}, err
+	}
 
 	err = envconfig.Process(context.Background(), &cfg)
 	if err != nil {
