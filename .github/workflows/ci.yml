@@ -1,0 +1,48 @@
+name: CI
+on:
+  push:
+    tags:
+      - dev/[1-9]+.[0-9]+.[0-9]+
+      - release/[1-9]+.[0-9]+.[0-9]+
+jobs:
+  dockerSetup:
+    name: Setup and build docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Docker login
+        run: |
+          echo ${{ secrets.PASSWORD }} | docker login ghcr.io -u LatiyevA --password-stdin 
+
+      - name: Docker build
+        run: |
+          docker build  -f Dockerfile -t ghcr.io/LatiyevA/go-template:latest .
+
+      - name: Docker push
+        run: |
+          docker push ghcr.io/LatiyevA/go-template:latest
+
+  deploy:
+    name: Deploy on server
+    runs-on: ubuntu-latest
+    needs: dockerSetup
+    environment:
+      name: production
+    steps:
+      - name: Checkout 🛎
+        uses: actions/checkout@master
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh/
+          echo "${{ secrets.SSH_PRIV_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.SSH_PUB_KEY }}" > ~/.ssh/id_rsa.pub
+          chmod 600 ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa.pub
+      - name: copy builds to server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.USER_IP }} "docker service update --image ghcr.io/LatiyevA/go-template:latest go-template"
+
+

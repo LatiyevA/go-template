@@ -1,0 +1,38 @@
+# VCS
+.git
+.gitignore
+
+# Binaries
+bin
+dist
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build/cache
+*.test
+*.out
+coverage.out
+coverage.html
+vendor
+.gocache
+cache
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile.*
+docker-compose.*.yml
+
+# Env / secrets
+.env
+*.env
+*.pem
+*.key
