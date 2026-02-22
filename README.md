@@ -1,6 +1,9 @@
 # Project Name
-
 Brief description of the project.
+
+## TODO
+- Update all dependencies using `go get -u ./...`
+- Update README.md, AGENTS.md, SKILLS.md accordingly to your project.
 
 ## Quick Start
 

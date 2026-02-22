@@ -1,0 +1,74 @@
+version: "3"
+
+vars:
+  bin: ".bin/go-template"
+  pkg: "./..."
+  coverfile: "coverage.out"
+
+tasks:
+
+  default:
+    desc: "Build and run the application"
+    deps:
+      - build
+    cmds:
+      - task run
+
+  run:
+    desc: "Run the application"
+    cmds:
+      - go run .
+
+  build:
+    desc: "Build the application"
+    cmds:
+      - go build -o {{.bin}} {{.pkg}}
+
+  test:
+    desc: "Run tests"
+    cmds:
+      - go test -failfast -cover -v {{.pkg}}
+
+  coverage:
+    desc: "Gathers coverage data and generates an HTML report"
+    cmds:
+      - go test -coverprofile={{.coverfile}} {{.pkg}}
+      - go tool cover -html={{.coverfile}} -o coverage.html
+
+  fmt:
+    desc: "Format source code"
+    cmds:
+      - go fmt {{.pkg}}
+
+  vet:
+    desc: "Go vet static analysis"
+    cmds:
+      - go vet {{.pkg}}
+
+  lint:
+    desc: "Run linters"
+    cmds:
+      - golangci-lint run {{.pkg}}
+    silent: true
+
+  deps-update:
+    desc: "Update dependencies"
+    cmds:
+      - go get -u {{.pkg}}
+      - go mod tidy
+
+  tidy:
+    desc: "Clean up go.mod and go.sum"
+    cmds:
+      - go mod tidy
+
+  clean:
+    desc: "Delete build artifacts"
+    cmds:
+      # Windows
+      - cmd: rmdir /s /q bin
+        platforms: [windows]
+      # Linux/macOS
+      - cmd: rm -rf bin
+        platforms: [linux, darwin]
+      - cmd: rm -f {{.coverfile}}
