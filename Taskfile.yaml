@@ -4,6 +4,8 @@ vars:
   bin: ".bin/go-template"
   pkg: "./..."
   coverfile: "coverage.out"
+  goose_driver: "postgres"
+  goose_dbstring: "user=postgres password=postgres dbname=go_template sslmode=disable"
 
 tasks:
 
@@ -23,6 +25,11 @@ tasks:
     desc: "Build the application"
     cmds:
       - go build -o {{.bin}} {{.pkg}}
+
+  migrate:
+    desc: "Run database migrations"
+    cmds:
+      - goose -dir db/migrations {{.goose_driver}} "{{.goose_dbstring}}" up
 
   test:
     desc: "Run tests"

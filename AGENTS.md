@@ -1,50 +1,65 @@
 # AGENTS.md
 
-This repository is a template for backend services written in Go.
-
-## Goals
-
-- Provide a fast way to bootstrap new services with a consistent structure.
-- Enforce unified rules for formatting, linting, and testing.
-- Minimize manual setup for Docker, PostgreSQL, and CI.
-
-## Project Structure
-
-- `cmd/app` — application entry point.
-- `internal/...` — business logic, HTTP handlers, data access.
-- `configs/` — configuration files.
-- `migrations/` — database migrations.
-- `.github/workflows/` — CI pipelines (deploy).
+This file provides guidance for AI agents interacting with code in this repository.
 
 ## Commands
 
-Before committing changes, prefer to run:
+- `task vet` — run `go vet` for static analysis.
+- `task lint` — run linters.
+- `task fmt` — format the codebase.
+- `task tidy` — run `go mod tidy` to clean up dependencies.
+- `task update` — update all dependencies using `go get -u ./...`.
+- `task test` — run tests with coverage.
+- `task build` — build the application.
 
-- `golangci-lint run ./...` — run the linter (golangci-lint).
-- `go test -v -race -cover ./...` — run tests.
-- `go run ./cmd/app` — start the application locally.
+**Do not run:** `task migrate`.
 
-## Guidelines for agents
+## Architecture
 
-### Do
+### Stack Overview
 
-- Preserve the existing structure (`cmd/`, `internal/`, `migrations/`).
-- Update or add tests when changing business logic.
-- Follow Go idioms and respect linter feedback where reasonable.
+- Go 1.25.4+ for backend development.
+- PostgreSQL for database.
+- Docker for containerization.
 
-### Do not
+### Directory Structure
 
-- Do not change the module name in `go.mod` unless the user explicitly requests it.
-- Do not introduce heavy dependencies without a clear benefit.
-- Do not rewrite the entire project structure unless explicitly requested.
-- Do not disable linters globally; if needed, disable them locally and with justification.
+TODO: Add comments about the directory structure.
 
-## When in doubt
+```bash
+├───.github
+│   └───workflows
+├───cmd
+│   └───app
+├───configs
+├───internal
+│   ├───config
+│   ├───delivery
+│   │   └───http
+│   │       └───v1
+│   ├───dto
+│   ├───entity
+│   ├───metrics
+│   ├───repo
+│   └───usecase
+├───migrations
+└───pkg
+    ├───gorm
+    │   └───postgres
+    ├───httpserver
+    └───validator
+```
 
-- Propose a short plan before performing large refactors.
-- For database changes, propose a new migration file and clearly describe what it does.
+### Key Patterns
 
-## Human vs agent docs
+### Code Style
 
-- `README.md` — instructions for humans.
-- `AGENTS.md` — instructions for AI agents interacting with this repository.
+### Testing
+
+### Important Rules
+
+- Always run `task vet`, `task lint`, and `task fmt` after completing a task to ensure no formatting or linting issues are introduced.
+- After introducing new dependencies run `task tidy` and `task deps-update` to clean up dependencies.
+- Follow Go idioms and best practices.
+
+### Additional information
