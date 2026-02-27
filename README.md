@@ -40,7 +40,7 @@ erDiagram
 ### Run locally
 
 ```bash
-git clone https://github.com/LatiyevA/go-template.git
-cd go-template
 cp .env.example .env
+docker compose -f docker-compose.dev.yaml up --build # For local development with hot-reloading
+docker exec -it app-dev sh # To access the container's shell
 ```
