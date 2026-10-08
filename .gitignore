@@ -6,6 +6,9 @@
 *.dylib
 bin/
 dist/
+.bin/
+tmp/
+build-errors.log
 
 # Test
 *.test

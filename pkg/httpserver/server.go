@@ -2,65 +2,76 @@ package httpserver
 
 import (
 	"context"
+	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
-const (
-	_defaultReadTimeout     = 5 * time.Second
-	_defaultWriteTimeout    = 5 * time.Second
-	_defaultAddr            = ":8080"
-	_defaultShutdownTimeout = 3 * time.Second
-)
-
-// Server represents custom http server.
+// Server owns the HTTP listener and its shutdown lifecycle.
 type Server struct {
 	server          *http.Server
 	notify          chan error
 	shutdownTimeout time.Duration
+	startOnce       sync.Once
 }
 
-// New creates new http server.
+// New configures a server. Call Start explicitly after initializing dependencies.
 func New(handler http.Handler, opts ...Option) *Server {
-	httpServer := &http.Server{
-		Handler:      handler,
-		ReadTimeout:  _defaultReadTimeout,
-		WriteTimeout: _defaultWriteTimeout,
-		Addr:         _defaultAddr,
-	}
-
 	s := &Server{
-		server:          httpServer,
+		server: &http.Server{
+			Handler:           handler,
+			Addr:              ":8080",
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       5 * time.Second,
+			WriteTimeout:      5 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		},
 		notify:          make(chan error, 1),
-		shutdownTimeout: _defaultShutdownTimeout,
+		shutdownTimeout: 10 * time.Second,
 	}
-
-	// Custom options
 	for _, opt := range opts {
 		opt(s)
 	}
-
-	s.start()
-
 	return s
 }
 
-// Notify returns server errors channel.
-func (s *Server) Notify() <-chan error {
-	return s.notify
+// Start binds the configured address and reports immediate listener failures.
+func (s *Server) Start() error {
+	listener, err := net.Listen("tcp", s.server.Addr)
+	if err != nil {
+		return err
+	}
+	return s.serve(listener)
 }
 
-// Shutdown server
+func (s *Server) serve(listener net.Listener) error {
+	started := false
+	s.startOnce.Do(func() {
+		started = true
+		go func() {
+			s.notify <- s.server.Serve(listener)
+			close(s.notify)
+		}()
+	})
+	if !started {
+		if err := listener.Close(); err != nil {
+			return err
+		}
+		return http.ErrServerClosed
+	}
+	return nil
+}
+
+// Notify reports when serving stops, including unexpected listener failures.
+func (s *Server) Notify() <-chan error { return s.notify }
+
+// Shutdown waits for in-flight requests until the configured timeout.
 func (s *Server) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 	defer cancel()
-
 	return s.server.Shutdown(ctx)
 }
 
-func (s *Server) start() {
-	go func() {
-		s.notify <- s.server.ListenAndServe()
-		close(s.notify)
-	}()
-}
+// Close terminates active connections after a failed graceful shutdown.
+func (s *Server) Close() error { return s.server.Close() }

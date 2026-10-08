@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -8,19 +9,14 @@ import (
 )
 
 type Handler struct {
-	uc  *usecase.Usecase
-	log *slog.Logger
-
+	uc    *usecase.Usecase
+	log   *slog.Logger
+	ready func(context.Context) error
 	http.Handler
 }
 
-func NewHandler(uc *usecase.Usecase, log *slog.Logger) *Handler {
-
-	h := &Handler{
-		uc:  uc,
-		log: log,
-	}
-
+func NewHandler(uc *usecase.Usecase, log *slog.Logger, ready func(context.Context) error) *Handler {
+	h := &Handler{uc: uc, log: log, ready: ready}
 	h.Handler = addRoutes(h)
 	return h
 }

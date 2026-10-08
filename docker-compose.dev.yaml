@@ -1,12 +1,12 @@
 services:
   app:
     container_name: app-dev
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.dev
     working_dir: /app
     ports:
-      - "8080:8080"
+      - "${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
     env_file:
       - .env
     volumes:
@@ -14,7 +14,9 @@ services:
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    stop_grace_period: 15s
 
   db:
     container_name: app-postgres-dev
@@ -24,9 +26,15 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: app_db
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pg-data-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d app_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
 
 volumes:
   pg-data-dev:

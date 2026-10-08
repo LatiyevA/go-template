@@ -1,43 +1,47 @@
 version: "3"
 
 vars:
-  bin: ".bin/go-template"
+  exeExt:
+    sh: go env GOEXE
+  bin: ".bin/go-template{{.exeExt}}"
   pkg: "./..."
   coverfile: "coverage.out"
   goose_driver: "postgres"
-  goose_dbstring: "user=postgres password=postgres dbname=go_template sslmode=disable"
+  goose_dbstring: '{{.PG_URL | default "postgres://postgres:postgres@localhost:5432/app_db?sslmode=disable"}}'
 
 tasks:
-
   default:
-    desc: "Build and run the application"
-    deps:
-      - build
+    desc: "Run the application"
     cmds:
-      - task run
+      - task: run
 
   run:
     desc: "Run the application"
     cmds:
-      - go run .
+      - go run ./cmd/app
 
   build:
     desc: "Build the application"
     cmds:
-      - go build -o {{.bin}} {{.pkg}}
+      - go build -o {{.bin}} ./cmd/app
 
   migrate:
-    desc: "Run database migrations"
+    desc: "Run database migrations against PG_URL (defaults to local development)"
     cmds:
-      - goose -dir db/migrations {{.goose_driver}} "{{.goose_dbstring}}" up
+      - goose -dir migrations {{.goose_driver}} "{{.goose_dbstring}}" up
 
   test:
-    desc: "Run tests"
+    desc: "Run tests with coverage (TEST_PG_URL enables PostgreSQL integration tests)"
     cmds:
-      - go test -failfast -cover -v {{.pkg}}
+      - go test -count=1 -cover {{.pkg}}
+
+  test-race:
+    desc: "Run tests with the race detector"
+    cmds:
+      - go test -race -count=1 {{.pkg}}
 
   coverage:
-    desc: "Gathers coverage data and generates an HTML report"
+    desc: "Generate a coverage report"
     cmds:
       - go test -coverprofile={{.coverfile}} {{.pkg}}
       - go tool cover -html={{.coverfile}} -o coverage.html
@@ -48,7 +52,7 @@ tasks:
       - go fmt {{.pkg}}
 
   vet:
-    desc: "Go vet static analysis"
+    desc: "Run Go vet"
     cmds:
       - go vet {{.pkg}}
 
@@ -58,6 +62,18 @@ tasks:
       - golangci-lint run {{.pkg}}
     silent: true
 
+  tools:
+    desc: "Install pinned developer tools"
+    cmds:
+      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
+      - go install github.com/air-verse/air@v1.63.0
+      - go install github.com/pressly/goose/v3/cmd/goose@v3.26.0
+
+  update:
+    desc: "Alias for deps-update"
+    cmds:
+      - task: deps-update
+
   deps-update:
     desc: "Update dependencies"
     cmds:
@@ -65,17 +81,14 @@ tasks:
       - go mod tidy
 
   tidy:
-    desc: "Clean up go.mod and go.sum"
+    desc: "Clean up module dependencies"
     cmds:
       - go mod tidy
 
   clean:
-    desc: "Delete build artifacts"
+    desc: "Delete build and test artifacts"
     cmds:
-      # Windows
-      - cmd: rmdir /s /q bin
+      - cmd: powershell -NoProfile -Command "Remove-Item -Recurse -Force .bin,tmp,coverage.out,coverage.html -ErrorAction SilentlyContinue"
         platforms: [windows]
-      # Linux/macOS
-      - cmd: rm -rf bin
+      - cmd: rm -rf .bin tmp coverage.out coverage.html
         platforms: [linux, darwin]
-      - cmd: rm -f {{.coverfile}}
