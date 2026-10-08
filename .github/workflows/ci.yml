@@ -1,48 +1,79 @@
 name: CI
+
 on:
+  pull_request:
   push:
-    tags:
-      - dev/[1-9]+.[0-9]+.[0-9]+
-      - release/[1-9]+.[0-9]+.[0-9]+
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  dockerSetup:
-    name: Setup and build docker
+  test:
+    name: Go checks and PostgreSQL integration tests
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.8-alpine3.23
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d app_db"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      TEST_PG_URL: postgres://postgres:postgres@localhost:5432/app_db?sslmode=disable
+      GIN_MODE: release
     steps:
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v2
-
-      - name: Docker login
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: go.mod
+      - name: Check formatting
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+      - name: Verify module files
         run: |
-          echo ${{ secrets.PASSWORD }} | docker login ghcr.io -u LatiyevA --password-stdin 
-
-      - name: Docker build
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - name: Build
+        run: go build -o .bin/go-template ./cmd/app
+      - uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8.0.0
+        with:
+          version: v2.5.0
+      - name: Build production image
+        run: docker build -t go-template:test .
+      - name: Smoke test environment configuration, port and shutdown
+        env:
+          PG_URL: ${{ env.TEST_PG_URL }}
         run: |
-          docker build  -f Dockerfile -t ghcr.io/LatiyevA/go-template:latest .
-
-      - name: Docker push
-        run: |
-          docker push ghcr.io/LatiyevA/go-template:latest
-
-  deploy:
-    name: Deploy on server
-    runs-on: ubuntu-latest
-    needs: dockerSetup
-    environment:
-      name: production
-    steps:
-      - name: Checkout 🛎
-        uses: actions/checkout@master
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh/
-          echo "${{ secrets.SSH_PRIV_KEY }}" > ~/.ssh/id_rsa
-          echo "${{ secrets.SSH_PUB_KEY }}" > ~/.ssh/id_rsa.pub
-          chmod 600 ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa.pub
-      - name: copy builds to server
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.USER_IP }} "docker service update --image ghcr.io/LatiyevA/go-template:latest go-template"
-
-
+          set -euo pipefail
+          trap 'docker logs template-smoke || true; docker rm -f template-smoke || true' EXIT
+          docker run -d --name template-smoke --network host \
+            -e SERVICE_NAME=ci -e PG_URL -e HTTP_PORT=18080 go-template:test
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:18080/readyz; then break; fi
+            sleep 1
+          done
+          curl --fail http://localhost:18080/healthz
+          curl --fail http://localhost:18080/readyz
+          test "$(docker exec template-smoke id -u)" != 0
+          docker stop --time 15 template-smoke
+          test "$(docker inspect -f '{{.State.ExitCode}}' template-smoke)" = 0
+          if docker run --rm --network host -e SERVICE_NAME=ci \
+            -e PG_URL='postgres://postgres:postgres@127.0.0.1:1/app_db?sslmode=disable' \
+            -e PG_CONNECT_TIMEOUT=1s go-template:test; then
+            echo "Startup failure unexpectedly exited successfully"
+            exit 1
+          fi

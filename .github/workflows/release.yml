@@ -1,0 +1,97 @@
+name: Publish and deploy
+
+on:
+  push:
+    tags: ["dev/*", "release/*"]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Validate version and normalize image name
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^(dev|release)/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected dev/X.Y.Z or release/X.Y.Z"
+            exit 1
+          fi
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        id: build
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ steps.image.outputs.version }}
+            ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: ${{ startsWith(github.ref_name, 'release/') && 'production' || 'development' }}
+    concurrency:
+      group: deploy-${{ startsWith(github.ref_name, 'release/') && 'production' || 'development' }}
+      cancel-in-progress: false
+    env:
+      IMAGE: ${{ needs.publish.outputs.image }}@${{ needs.publish.outputs.digest }}
+      DEPLOY_ENVIRONMENT: ${{ startsWith(github.ref_name, 'release/') && 'production' || 'development' }}
+      PRODUCTION_SSH_TARGET: ${{ secrets.PRODUCTION_SSH_TARGET }}
+      DEVELOPMENT_SSH_TARGET: ${{ secrets.DEVELOPMENT_SSH_TARGET }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIV_KEY }}
+      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      SWARM_SERVICE: ${{ vars.SWARM_SERVICE || github.event.repository.name }}
+    steps:
+      - name: Deploy immutable image with verified SSH host identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$DEPLOY_ENVIRONMENT" in
+            production) SSH_TARGET="$PRODUCTION_SSH_TARGET" ;;
+            development) SSH_TARGET="$DEVELOPMENT_SSH_TARGET" ;;
+            *) exit 1 ;;
+          esac
+          test -n "$SSH_TARGET" && test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS"
+          [[ "$SWARM_SERVICE" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]+$ ]]
+          [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}$ ]]
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          chmod 700 "$ssh_dir"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/id"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/id" "$ssh_dir/known_hosts"
+          ssh -i "$ssh_dir/id" -p "$SSH_PORT" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=15 -o "UserKnownHostsFile=$ssh_dir/known_hosts" \
+            -- "$SSH_TARGET" \
+            "docker service update --with-registry-auth --image '$IMAGE' '$SWARM_SERVICE'"

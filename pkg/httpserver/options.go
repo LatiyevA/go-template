@@ -1,37 +1,37 @@
 package httpserver
 
 import (
+	"log/slog"
 	"net"
 	"time"
 )
 
-// Option -.
 type Option func(*Server)
 
-// Port -.
 func Port(port string) Option {
-	return func(s *Server) {
-		s.server.Addr = net.JoinHostPort("", port)
-	}
+	return func(s *Server) { s.server.Addr = net.JoinHostPort("", port) }
 }
 
-// ReadTimeout -.
 func ReadTimeout(timeout time.Duration) Option {
-	return func(s *Server) {
-		s.server.ReadTimeout = timeout
-	}
+	return func(s *Server) { s.server.ReadTimeout = timeout }
 }
 
-// WriteTimeout -.
+func ReadHeaderTimeout(timeout time.Duration) Option {
+	return func(s *Server) { s.server.ReadHeaderTimeout = timeout }
+}
+
 func WriteTimeout(timeout time.Duration) Option {
-	return func(s *Server) {
-		s.server.WriteTimeout = timeout
-	}
+	return func(s *Server) { s.server.WriteTimeout = timeout }
 }
 
-// ShutdownTimeout -.
+func IdleTimeout(timeout time.Duration) Option {
+	return func(s *Server) { s.server.IdleTimeout = timeout }
+}
+
 func ShutdownTimeout(timeout time.Duration) Option {
-	return func(s *Server) {
-		s.shutdownTimeout = timeout
-	}
+	return func(s *Server) { s.shutdownTimeout = timeout }
+}
+
+func Logger(log *slog.Logger) Option {
+	return func(s *Server) { s.server.ErrorLog = slog.NewLogLogger(log.Handler(), slog.LevelError) }
 }

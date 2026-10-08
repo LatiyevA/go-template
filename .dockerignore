@@ -5,6 +5,9 @@
 # Binaries
 bin
 dist
+.bin
+tmp
+build-errors.log
 *.exe
 *.dll
 *.so
@@ -30,6 +33,7 @@ Thumbs.db
 # Docker
 Dockerfile.*
 docker-compose.*.yml
+docker-compose.*.yaml
 
 # Env / secrets
 .env
